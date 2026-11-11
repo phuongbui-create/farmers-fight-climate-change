@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Too Hot to Work? A Heat Planner for Farm Work</title>
+<style>
+  :root{
+    --bg:#0e1014; --panel:#161920; --line:#262a33; --text:#e7e9ee; --muted:#9aa1ad;
+    --temp:#ff6b3d; --hum:#3dc9ff; --wind:#5ef0a8; --ok:#5ef0a8; --no:#ff4d6d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:1080px;margin:0 auto;padding:40px 20px 60px}
+  h1{font-size:1.9rem;margin:0 0 6px;font-weight:650;letter-spacing:-.01em}
+  h2{font-size:1.12rem;margin:0 0 12px;font-weight:600}
+  .sub{color:var(--muted);margin:0 0 28px}
+  .grid{display:grid;grid-template-columns:350px minmax(0,1fr);gap:20px}
+  @media (max-width:840px){.grid{grid-template-columns:minmax(0,1fr)}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px}
+  .slider{margin-bottom:20px}
+  .slider label{display:flex;justify-content:space-between;font-weight:550;margin-bottom:6px}
+  .slider .val{font-variant-numeric:tabular-nums}
+  .slider small{color:var(--muted);display:block;margin-top:4px;font-size:.8rem}
+  input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:8px;border-radius:6px;outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid var(--c);box-shadow:0 0 10px var(--c)}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:#fff;border:3px solid var(--c);box-shadow:0 0 10px var(--c)}
+  #temp{--c:var(--temp)} #hum{--c:var(--hum)} #wind{--c:var(--wind)}
+  .toggles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+  .seg{display:flex;background:#1c2029;border-radius:9px;padding:3px}
+  .seg button{flex:1;border:0;background:none;color:var(--muted);padding:6px 4px;border-radius:7px;font:inherit;font-size:.82rem;cursor:pointer}
+  .seg button.on{background:#2e3442;color:var(--text)}
+  .seg-label{font-size:.78rem;color:var(--muted);margin-bottom:4px}
+  .verdict{border-radius:12px;padding:16px;border:2px solid var(--vc);background:color-mix(in srgb,var(--vc) 13%,transparent)}
+  .verdict .big{font-size:2.2rem;font-weight:700;color:var(--vc);line-height:1.1;font-variant-numeric:tabular-nums}
+  .verdict .big small{font-size:1rem;font-weight:600}
+  .verdict p{margin:8px 0 0;font-size:.92rem}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+  .stat{background:#1c2029;border-radius:10px;padding:10px;text-align:center}
+  .stat b{display:block;font-size:1.2rem;font-variant-numeric:tabular-nums}
+  .stat span{font-size:.74rem;color:var(--muted)}
+  .plot{position:relative;width:100%;overflow:hidden;border-radius:8px}
+  .plot canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .grid>*,.charts>*{min-width:0}
+  .charts{display:grid;gap:20px;grid-template-columns:minmax(0,1fr)}
+  table{width:100%;border-collapse:collapse;font-size:.92rem}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600}
+  td.y{color:var(--ok);font-weight:600} td.n{color:var(--no);font-weight:600}
+  .prose p,.prose li{color:#cfd3db}
+  .prose ul,.prose ol{padding-left:20px}
+  a{color:var(--hum)}
+  .caption{color:var(--muted);font-size:.82rem;margin:8px 0 0}
+  .warn{color:var(--no);font-weight:600}
+</style>
+</head>
+<body>
+<main>
+  <h1>Too hot to work outside?</h1>
+  <p class="sub">A heat planner for farm work, based on the human heat-balance model of Vanos et al. (2023). Set the forecast to see how hard someone can work all day without their body storing heat.</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Conditions</h2>
+      <div class="slider">
+        <label for="temp"><span style="color:var(--temp)">Air temperature</span><span class="val" id="tempV"></span></label>
+        <input type="range" id="temp" min="70" max="120" step="1" value="95">
+        <small>Shade air temperature from the forecast</small>
+      </div>
+      <div class="slider">
+        <label for="hum"><span style="color:var(--hum)">Relative humidity</span><span class="val" id="humV"></span></label>
+        <input type="range" id="hum" min="5" max="100" step="1" value="40">
+        <small>How close the air is to saturated with water vapor</small>
+      </div>
+      <div class="slider">
+        <label for="wind"><span style="color:var(--wind)">Wind speed</span><span class="val" id="windV"></span></label>
+        <input type="range" id="wind" min="0" max="25" step="1" value="6">
+        <small>Sustained wind from the forecast (10 m height)</small>
+      </div>
+      <div class="toggles">
+        <div><div class="seg-label">Worker</div>
+          <div class="seg" id="age"><button data-v="0" class="on">18–40 yrs</button><button data-v="1">Over 65</button></div></div>
+        <div><div class="seg-label">Exposure</div>
+          <div class="seg" id="sun"><button data-v="1" class="on">Sun</button><button data-v="0">Shade</button></div></div>
+      </div>
+
+      <div class="verdict" id="verdict">
+        <div class="seg-label">Highest safe sustained activity</div>
+        <div class="big" id="met"></div>
+        <p id="advice"></p>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="twV"></b><span>Wet-bulb temperature</span></div>
+        <div class="stat"><b id="tcV"></b><span>Air temperature (°C)</span></div>
+      </div>
+      <p class="caption" id="note"></p>
+    </section>
+
+    <section class="charts">
+      <div class="card">
+        <h2>Livability map: max sustained activity (METs) by temperature and humidity</h2>
+        <div class="plot" style="height:340px"><canvas id="map"></canvas></div>
+        <p class="caption">Colors use the METs scale from the course slides. Dark hatching means "survivable but not livable," where even sitting stores heat. Dashed line: wet-bulb 31 °C, where heat becomes uncompensable on the humid side. Solid line: wet-bulb 35 °C. The white ring marks your settings, using the current wind, worker and exposure.</p>
+      </div>
+      <div class="card">
+        <h2>Does wind help? Max sustained activity (METs) vs. wind speed</h2>
+        <div class="plot" style="height:250px"><canvas id="windChart"></canvas></div>
+        <p class="caption">This uses the current temperature, humidity, worker and exposure. Dotted lines mark the farm tasks in the table below.</p>
+      </div>
+    </section>
+  </div>
+
+  <section class="card prose" style="margin-top:20px">
+    <h2>Which farm jobs can be sustained right now?</h2>
+    <table>
+      <thead><tr><th>Task</th><th>Comparable activity (course slide)</th><th>Effort (METs)</th><th>Sustainable all day?</th></tr></thead>
+      <tbody id="tbl"></tbody>
+    </table>
+    <p class="caption">"Sustainable" means the body can shed all the heat it makes. Above that level, work is still possible in short bouts with cool-down breaks, but heat builds up in the body during each bout.</p>
+  </section>
+
+  <section class="card prose" style="margin-top:20px">
+    <h2>What's the issue?</h2>
+    <p>Working muscles produce heat, and the body has to get rid of it. On a hot day most of that heat leaves through sweat evaporating from the skin. That can fail in two ways, which are the two failure modes on the course slides. In <b>humid air</b>, sweat can't evaporate fast enough. In <b>very hot, dry air</b>, the body can't make sweat fast enough. When either limit is reached, the body stores heat and core temperature rises. The harder someone works, the sooner that happens, so the real question for a farmer isn't "is it hot?" but "<b>how hard can my crew work today without overheating?</b>"</p>
+    <p>That's measured in <b>METs</b> (metabolic equivalents). Sitting is about 1.5, housework about 3, brisk walking about 4, dancing about 5, and heavy lifting about 7. The planner finds the highest MET level at which a body can still shed all the heat it makes.</p>
+
+    <h2>What the controls represent</h2>
+    <ul>
+      <li><b style="color:var(--temp)">Air temperature (70–120 °F, about 21–49 °C):</b> the forecast shade temperature. The range runs from a mild morning to near-record U.S. heat.</li>
+      <li><b style="color:var(--hum)">Relative humidity (5–100 %):</b> desert afternoons are near 10 %, and humid Gulf Coast mornings are near 100 %.</li>
+      <li><b style="color:var(--wind)">Wind speed (0–25 mph):</b> the forecast wind. The model assumes the air at body height moves at 70 % of the forecast speed.</li>
+      <li><b>Worker and exposure:</b> the four panels on the course slides. Older adults sweat less, and full sun adds radiant heat. As slide 3 notes, sun moves every limit a few degrees cooler, and age moves it further.</li>
+    </ul>
+    <p>The defaults (95 °F / 35 °C, 40 % humidity) are the "Sept. 21, 2026 at 4 pm" example from the course slides, a typical College Station afternoon. A light breeze of 6 mph, sun and an 18–40-year-old worker match panel c.</p>
+
+    <h2>What to notice as you move the sliders</h2>
+    <ul>
+      <li><b>Humidity and temperature trade off.</b> The color bands on the map slope down to the right: on a dry day you can handle much higher temperatures than on a humid one. The bands follow wet-bulb temperature on the humid side but bend on the dry side, where the sweat-rate limit takes over.</li>
+      <li><b>Wind's effect depends on the other two sliders.</b> At 95 °F and 40 % humidity, wind raises safe effort because it speeds up evaporation. Raise the temperature to about 105 °F or more with low humidity, and the wind line rises for the first few mph, then slopes <i>down</i>: the air is hotter than skin (about 96 °F), so extra wind blows more heat onto the body, and the worker is already sweating as fast as possible.</li>
+      <li><b>Age and sun shift everything.</b> Toggle the worker and exposure buttons and watch the livable area shrink. At the default conditions, a young worker in shade can sustain about 4 METs (brisk walking). In sun that drops to about 3.2 (housework), and an older worker in sun manages only about 2.4.</li>
+      <li><b>Below 1.5 METs the conditions aren't livable</b>, even sitting still. Near College Station, the highest wet-bulb temperature observed in August from 2017 to 2026 was 28.1 °C (82.6 °F, 9 Aug 2024; course slide 10), short of the 31 °C line but close enough to cut safe work sharply.</li>
+    </ul>
+
+    <h2>How it's calculated</h2>
+    <ol>
+      <li>A steady-state heat balance for a lightly clothed worker with skin at 35.5 °C: <i>metabolic heat − breathing losses + dry heat gain from hot air + solar gain = evaporative cooling</i>.</li>
+      <li>Evaporative cooling is limited by the <b>air</b> (vapor-pressure difference between skin and air, times an evaporation coefficient that grows with wind speed) or by the <b>body</b> (maximum sweat rate, lower for older adults), whichever is smaller. These are the two failure modes on slide 3.</li>
+      <li>We solve for the largest metabolic rate that balances, then divide by 58.2 W/m² to get METs.</li>
+      <li>Wet-bulb temperature uses Stull's (2011) formula.</li>
+    </ol>
+    <p class="caption">This is a simplified version of the Vanos et al. model. Its clothing, sweat-rate and solar parameters were tuned so the livability limits match the course figures (slides 3, 9 and 10) within about 1–2 °C. It's a teaching tool, not a medical device. Watch workers for signs of heat illness whatever the numbers say.</p>
+
+    <h2>Sources</h2>
+    <ul>
+      <li>Course readings: "Extreme Heat" slides, classes 8–9: slide 3 (two failure modes; effects of sun and age), slide 9 (livability in METs, the Sept. 21, 2026 example) and slide 10 (College Station temperature/humidity frequency, August 2017–2026).</li>
+      <li>Vanos, J. et al. (2023). A physiological approach for assessing human survivability and liveability to heat in a changing climate. <i>Nature Communications</i> 14, 7653.</li>
+      <li>Stull, R. (2011). Wet-bulb temperature from relative humidity and air temperature. <i>J. Appl. Meteor. Climatol.</i> 50, 2267–2269.</li>
+      <li>Vecellio, D. J. et al. (2022). Evaluating the 35 °C wet-bulb temperature adaptability threshold for young, healthy subjects. <i>J. Appl. Physiol.</i> 132, 340–345.</li>
+      <li>MET values for activities are from the course slide 9 legend (which follows the Compendium of Physical Activities).</li>
+    </ul>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const state = {old:0, sun:1};
+
+// ---------- physics ----------
+const psat = t => 0.6108*Math.exp(17.27*t/(t+237.3));   // kPa, t in °C
+const F2C = f => (f-32)*5/9, C2F = c => c*9/5+32;
+const P = {Tsk:35.5, Icl:0.05, im:0.38, solar:45, sweatYoung:0.6, sweatOld:0.45, wOld:0.8}; // calibrated to course figures
+
+function maxMET(TaC, RH, windMph, sun, old){
+  const Pa = RH/100*psat(TaC);
+  const v  = Math.max(0.3, 0.447*windMph*0.7);              // m/s at body height
+  const hc = 8.3*Math.pow(v,0.6);                            // convective coeff, W/m²K
+  const UT = 1/(P.Icl + 1/(1.1*(hc+4.7)));                   // dry heat transfer through clothing
+  const Ue = 16.5*P.im*UT;                                   // evaporative coeff (Lewis relation)
+  const Eair  = (old?P.wOld:1)*Ue*(psat(P.Tsk)-Pa);          // limit set by the air
+  const Ebody = (old?P.sweatOld:P.sweatYoung)*675/1.8;       // limit set by max sweat rate (L/h → W/m²)
+  const k = 1 - 0.0014*(34-TaC) - 0.0173*(5.87-Pa);          // breathing losses scale with metabolism
+  const M = (Math.min(Eair,Ebody) + UT*(P.Tsk-TaC) - (sun?P.solar:0))/k;
+  return {met: M/58.2, limit: Eair < Ebody ? 'air' : 'body'};
+}
+function wetBulbC(TaC, RH){
+  return TaC*Math.atan(0.151977*Math.sqrt(RH+8.313659)) + Math.atan(TaC+RH) - Math.atan(RH-1.676331)
+       + 0.00391838*Math.pow(RH,1.5)*Math.atan(0.023101*RH) - 4.686035;
+}
+
+// ---------- scales ----------
+const STOPS = [1.5,2.3,3,4,5,6,7];
+const SCOLS = ['#3f4fb8','#2f8fc4','#45b39d','#9fd48a','#f1e58c','#f9b25b','#f07a4b','#c9334f'];
+function metColor(m){ if (m < 1.5) return null; let i=0; while (i<STOPS.length && m>=STOPS[i]) i++; return SCOLS[i]; }
+const TASKS = [
+  {task:'Driving a tractor, checking irrigation', like:'Sitting', met:1.5},
+  {task:'Scouting fields on foot, hand-picking produce', like:'Housework', met:3},
+  {task:'Steady walking work: moving pipe, feeding livestock', like:'Brisk walking', met:4},
+  {task:'Hoeing, shoveling, fence repair', like:'Dancing', met:5},
+  {task:'Stacking hay bales, carrying feed sacks', like:'Heavy lifting', met:7},
+];
+
+// ---------- canvas helpers ----------
+function setup(cv){
+  const box = cv.parentElement, dpr = window.devicePixelRatio||1;
+  const w = box.clientWidth, h = box.clientHeight;
+  if (cv.width !== Math.round(w*dpr) || cv.height !== Math.round(h*dpr)){
+    cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr);
+  }
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  ctx.lineWidth = 1; ctx.lineCap = 'butt'; ctx.setLineDash([]); ctx.globalAlpha = 1;
+  return {ctx,w,h};
+}
+const PAD = {l:58, r:16, t:14, b:46};
+function frame(ctx,w,h,xr,yr){
+  return {
+    X: v => PAD.l + (v-xr[0])/(xr[1]-xr[0])*(w-PAD.l-PAD.r),
+    Y: v => h-PAD.b - (v-yr[0])/(yr[1]-yr[0])*(h-PAD.t-PAD.b)
+  };
+}
+function axes(ctx,w,h,X,Y,xt,yt,xl,yl){
+  ctx.strokeStyle='#3a3f4b'; ctx.lineWidth=1; ctx.fillStyle='#9aa1ad'; ctx.font='12px system-ui,sans-serif';
+  ctx.beginPath(); ctx.moveTo(PAD.l,PAD.t); ctx.lineTo(PAD.l,h-PAD.b); ctx.lineTo(w-PAD.r,h-PAD.b); ctx.stroke();
+  ctx.textAlign='center'; ctx.textBaseline='top'; xt.forEach(v=>ctx.fillText(v,X(v),h-PAD.b+6));
+  ctx.textAlign='right'; ctx.textBaseline='middle'; yt.forEach(v=>ctx.fillText(v,PAD.l-8,Y(v)));
+  ctx.fillStyle='#cfd3db'; ctx.font='13px system-ui,sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.fillText(xl, PAD.l+(w-PAD.l-PAD.r)/2, h-6);
+  ctx.save(); ctx.translate(15, PAD.t+(h-PAD.t-PAD.b)/2); ctx.rotate(-Math.PI/2); ctx.fillText(yl,0,0); ctx.restore();
+}
+function hatch(ctx){
+  const p = document.createElement('canvas'); p.width=p.height=8;
+  const c = p.getContext('2d'); c.fillStyle='#1d2029'; c.fillRect(0,0,8,8);
+  c.strokeStyle='#4a4f5c'; c.lineWidth=1.2; c.beginPath(); c.moveTo(0,8); c.lineTo(8,0); c.moveTo(-2,2); c.lineTo(2,-2); c.moveTo(6,10); c.lineTo(10,6); c.stroke();
+  return ctx.createPattern(p,'repeat');
+}
+// RH (%) at which wet-bulb equals target, for a given air temp (°C); null if not reached
+function rhForTw(TaC, twTarget){
+  if (wetBulbC(TaC,99) < twTarget || wetBulbC(TaC,5) > twTarget) return null;
+  let lo=5, hi=99; for (let i=0;i<30;i++){ const m=(lo+hi)/2; wetBulbC(TaC,m)<twTarget?lo=m:hi=m; } return (lo+hi)/2;
+}
+
+function drawMap(Tf,RH,w){
+  const {ctx,w:W,h:H} = setup($('map'));
+  const xr=[70,120], yr=[5,100]; const {X,Y} = frame(ctx,W,H,xr,yr);
+  const nx=60, ny=40, cw=(W-PAD.l-PAD.r)/nx, ch=(H-PAD.t-PAD.b)/ny, pat=hatch(ctx);
+  for (let i=0;i<nx;i++) for (let j=0;j<ny;j++){
+    const t = xr[0]+(i+.5)*(xr[1]-xr[0])/nx, r = yr[0]+(j+.5)*(yr[1]-yr[0])/ny;
+    const col = metColor(maxMET(F2C(t),r,w,state.sun,state.old).met);
+    ctx.fillStyle = col || pat; ctx.fillRect(PAD.l+i*cw, H-PAD.b-(j+1)*ch, cw+.6, ch+.6);
+  }
+  // wet-bulb lines
+  [[31,[6,5]],[35,[]]].forEach(([tw,dash])=>{
+    ctx.beginPath(); let started=false;
+    for (let t=xr[0]; t<=xr[1]; t+=0.5){
+      const r = rhForTw(F2C(t),tw); if (r===null){ continue; }
+      started ? ctx.lineTo(X(t),Y(r)) : (ctx.moveTo(X(t),Y(r)), started=true);
+    }
+    ctx.setLineDash(dash); ctx.strokeStyle='#ffffff'; ctx.lineWidth=2; ctx.stroke(); ctx.setLineDash([]);
+  });
+  ctx.fillStyle='#fff'; ctx.font='11px system-ui,sans-serif'; ctx.textAlign='left';
+  [[31,'Tw 31 °C'],[35,'Tw 35 °C']].forEach(([tw,lab])=>{
+    const t = xr[0]+ (tw===31?24:30); const r = rhForTw(F2C(t),tw); if (r) ctx.fillText(lab, X(t)+4, Y(r)-6);
+  });
+  axes(ctx,W,H,X,Y,[70,80,90,100,110,120],[20,40,60,80,100],'Air temperature (°F)','Relative humidity (%)');
+  ctx.beginPath(); ctx.arc(X(Tf),Y(RH),9,0,2*Math.PI); ctx.lineWidth=3; ctx.strokeStyle='#fff'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(X(Tf),Y(RH),3,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill();
+  // legend
+  const labs = ['<1.5','1.5','2.3','3','4','5','6','7+'];
+  let lx = PAD.l+10, ly = H-PAD.b-42; ctx.fillStyle='rgba(14,16,20,.82)'; ctx.fillRect(lx-6,ly-5,labs.length*34+8,36);
+  labs.forEach((l,i)=>{ ctx.fillStyle = i===0?pat:SCOLS[i-1]; ctx.fillRect(lx+i*34,ly,30,10);
+    ctx.fillStyle='#cfd3db'; ctx.textAlign='center'; ctx.fillText(l,lx+i*34+15,ly+23); });
+}
+
+function drawWind(TaC,RH,w){
+  const {ctx,w:W,h:H} = setup($('windChart'));
+  const pts=[]; for (let s=0;s<=25;s+=0.5) pts.push([s, maxMET(TaC,RH,s,state.sun,state.old).met]);
+  const ys = pts.map(p=>p[1]);
+  const lo = Math.min(0, Math.floor(Math.min(...ys))), hi = Math.max(8, Math.ceil(Math.max(...ys)));
+  const xr=[0,25], yr=[lo,hi]; const {X,Y} = frame(ctx,W,H,xr,yr);
+  // unlivable zone
+  if (lo < 1.5){ ctx.fillStyle = hatch(ctx); ctx.fillRect(PAD.l, Y(1.5), W-PAD.l-PAD.r, Y(lo)-Y(1.5)); }
+  TASKS.forEach(t=>{ if (t.met>hi) return; ctx.setLineDash([2,4]); ctx.strokeStyle='#5a6070'; ctx.beginPath();
+    ctx.moveTo(PAD.l,Y(t.met)); ctx.lineTo(W-PAD.r,Y(t.met)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='#8b92a0'; ctx.font='11px system-ui,sans-serif'; ctx.textAlign='right'; ctx.fillText(t.like, W-PAD.r-4, Y(t.met)-4); });
+  const yt=[]; for (let v=lo; v<=hi; v+= (hi-lo>10?2:1)) yt.push(v);
+  axes(ctx,W,H,X,Y,[0,5,10,15,20,25],yt,'Wind speed (mph)','Max sustained activity (METs)');
+  // colored line, segment by segment
+  ctx.lineWidth=3.5; ctx.lineCap='round';
+  for (let i=1;i<pts.length;i++){ ctx.beginPath(); ctx.moveTo(X(pts[i-1][0]),Y(pts[i-1][1])); ctx.lineTo(X(pts[i][0]),Y(pts[i][1]));
+    ctx.strokeStyle = metColor(pts[i][1]) || '#ff4d6d'; ctx.stroke(); }
+  const cur = maxMET(TaC,RH,w,state.sun,state.old).met;
+  ctx.beginPath(); ctx.arc(X(w),Y(cur),6,0,2*Math.PI); ctx.fillStyle='#fff'; ctx.fill();
+}
+
+function paintTrack(el,color){ const p=(el.value-el.min)/(el.max-el.min)*100;
+  el.style.background=`linear-gradient(90deg, ${color} ${p}%, #2a2f3a ${p}%)`; }
+
+function update(){
+  const Tf=+$('temp').value, RH=+$('hum').value, w=+$('wind').value, TaC=F2C(Tf);
+  $('tempV').textContent = `${Tf} °F (${TaC.toFixed(0)} °C)`;
+  $('humV').textContent = RH+' %'; $('windV').textContent = w+' mph';
+  paintTrack($('temp'),'#ff6b3d'); paintTrack($('hum'),'#3dc9ff'); paintTrack($('wind'),'#5ef0a8');
+
+  const r = maxMET(TaC,RH,w,state.sun,state.old), m = r.met, tw = wetBulbC(TaC,RH);
+  const col = metColor(m) || '#ff4d6d';
+  $('verdict').style.setProperty('--vc', col);
+  $('met').innerHTML = m < 1.5 ? 'Not livable' : `${m.toFixed(1)} <small>METs</small>`;
+  const ok = TASKS.filter(t=>m>=t.met);
+  $('advice').textContent = m < 1.5
+    ? 'Even resting in these conditions stores heat. Stop work and get to air conditioning or shade with water.'
+    : (ok.length===TASKS.length ? 'All farm tasks can be sustained, including heavy lifting.'
+      : `About the effort of ${ok[ok.length-1].like.toLowerCase()}. Heavier jobs need short bouts with cool-down breaks, or should move to a cooler time of day.`)
+      + ` (Limited by ${r.limit==='air' ? 'humid air: sweat can\'t evaporate fast enough' : 'sweat rate: the body can\'t sweat fast enough'}.)`;
+  $('twV').innerHTML = `${tw.toFixed(1)} °C <small style="font-size:.75rem;color:var(--muted)">(${C2F(tw).toFixed(0)} °F)</small>`;
+  $('tcV').textContent = TaC.toFixed(1);
+  $('note').innerHTML = tw >= 35 ? '<span class="warn">Wet-bulb is at or above 35 °C, the theoretical limit of human survivability.</span>'
+    : tw >= 31 ? '<span class="warn">Wet-bulb is at or above 31 °C, where heat is uncompensable even at rest (Vecellio et al. 2022).</span>' : '';
+  $('tbl').innerHTML = TASKS.map(t=>`<tr><td>${t.task}</td><td>${t.like}</td><td>${t.met}</td>
+    <td class="${m>=t.met?'y':'n'}">${m>=t.met?'✓ Yes':'✗ No'}</td></tr>`).join('');
+  drawMap(Tf,RH,w); drawWind(TaC,RH,w);
+}
+
+document.querySelectorAll('.seg').forEach(seg=>seg.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  seg.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  state[seg.id==='age'?'old':'sun'] = +b.dataset.v; update();
+}));
+['temp','hum','wind'].forEach(id=>$(id).addEventListener('input',update));
+let rz; window.addEventListener('resize',()=>{cancelAnimationFrame(rz); rz=requestAnimationFrame(update);});
+update();
+</script>
+</body>
+</html>
