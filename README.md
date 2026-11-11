@@ -16,3 +16,9 @@ The model is a simplified version of the human heat-balance model in Vanos et al
 ## Running locally
 
 It's a single self-contained HTML file with no dependencies. Open `index.html` in any browser.
+
+## Team members
+Phuong Bui 
+Ilianna Flores
+Nergis Gokrem
+Mallori Lewis
